@@ -22,7 +22,7 @@ class TurtleBotController(Node):
         # Initialize the velocity message
         self.vel_msg = Twist()
         #threshold parameter
-        self.declare_parameter("threshold", 0.7)   
+        self.declare_parameter("threshold", 1.0)   
         self.threshold = self.get_parameter("threshold").get_parameter_value().double_value
         #maximum linear velocity parameter
         self.declare_parameter("max_lin_vel", 0.22)   
@@ -69,49 +69,51 @@ class TurtleBotController(Node):
         # Get left and right distances
         #I scan the section that correspond to 90 degrees to the left and 90 degrees to the right
         #I do this performing integer division (split the dataset into 4 part) and than remove/add the range desired
-        left_distances = data.ranges[num_readings // 4 - self.side_angle_range :num_readings // 4 + self.side_angle_range ]
-        right_distances = data.ranges[3 * num_readings // 4 - self.side_angle_range :3 * num_readings // 4 + self.side_angle_range ]
+        left_distances = data.ranges[num_readings // 4  :num_readings // 4 + self.side_angle_range + self.side_angle_range ]
+        right_distances = data.ranges[3 * num_readings // 4  :3 * num_readings // 4 + self.side_angle_range + self.side_angle_range ]
         # Clean up infinite distances as in the previous case
         self.min_left_distance = min([d for d in left_distances if d != float('inf')], default=float('inf'))
         self.min_right_distance = min([d for d in right_distances if d != float('inf')], default=float('inf'))
 
     def control_loop(self):
+        """
         if self.flag:
             self.get_logger().info("THE GREEN CUBE HAS BEEN REACHED")
             self.vel_msg.linear.x = 0.0 # Stops
             self.vel_msg.angular.z = 1.5  # Start spinning
         else:
-            # Case 1: move forward
-            if self.state == 1:
-                if self.min_front_distance < self.threshold:
-                    # Obstacle detected in front, stop the robot and switch to rotating state
-                    self.get_logger().info(f"Obstacle detected at {self.min_front_distance:.2f} meters! Stopping the robot and rotating.")
-                    self.vel_msg.linear.x = 0.0  # Stop forward movement
-                    self.state = 2
+        """
+        # Case 1: move forward
+        if self.state == 1:
+            if self.min_front_distance < self.threshold:
+                # Obstacle detected in front, stop the robot and switch to rotating state
+                self.get_logger().info(f"Obstacle detected at {self.min_front_distance:.2f} meters! Stopping the robot and rotating.")
+                self.vel_msg.linear.x = 0.0  # Stop forward movement
+                self.state = 2
+            else:
+                # No obstacle, move forward
+                self.vel_msg.linear.x = self.max_lin_vel # Move forward with a constant speed
+                self.vel_msg.angular.z = 0.0  # No rotation
+        # Case 2: rotate until it finds a suitable direction
+        elif self.state == 2:
+            if self.min_front_distance < self.threshold:
+                # Still obstacle in front, check left and right distances
+                if self.min_left_distance > self.min_right_distance:
+                    # More space on the left, rotate left
+                    self.get_logger().info("Rotating left to find a free direction.")
+                    self.vel_msg.angular.z = self.max_ang_vel # Rotate left
                 else:
-                    # No obstacle, move forward
-                    self.vel_msg.linear.x = self.max_lin_vel # Move forward with a constant speed
-                    self.vel_msg.angular.z = 0.0  # No rotation
-            # Case 2: rotate until it finds a suitable direction
-            elif self.state == 2:
-                if self.min_front_distance < self.threshold:
-                    # Still obstacle in front, check left and right distances
-                    if self.min_left_distance > self.min_right_distance:
-                        # More space on the left, rotate left
-                        self.get_logger().info("Rotating left to find a free direction.")
-                        self.vel_msg.angular.z = self.max_ang_vel # Rotate left
-                    else:
-                        # More space on the right, rotate right
-                        self.get_logger().info("Rotating right to find a free direction.")
-                        self.vel_msg.angular.z = -self.max_ang_vel  # Rotate right
-                    # Set linear velocity to zero to prevent backward movement
-                    self.vel_msg.linear.x = 0.0
-                else:
-                    # Free direction found, switch back to moving forward
-                    self.get_logger().info("Free direction found! Resuming forward movement.")
-                    self.state = 1 #reset the state to the moving forward situation
-                    self.vel_msg.angular.z = 0.0  # Stop rotating
-                    self.vel_msg.linear.x = self.max_lin_vel  # Start moving forward again
+                    # More space on the right, rotate right
+                    self.get_logger().info("Rotating right to find a free direction.")
+                    self.vel_msg.angular.z = -self.max_ang_vel  # Rotate right
+                # Set linear velocity to zero to prevent backward movement
+                self.vel_msg.linear.x = 0.15
+            else:
+                # Free direction found, switch back to moving forward
+                self.get_logger().info("Free direction found! Resuming forward movement.")
+                self.state = 1 #reset the state to the moving forward situation
+                self.vel_msg.angular.z = 0.0  # Stop rotating
+                self.vel_msg.linear.x = self.max_lin_vel  # Start moving forward again
         # Publish the velocity command
         self.vel_pub.publish(self.vel_msg)
 
